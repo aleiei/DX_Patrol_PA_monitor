@@ -1,6 +1,6 @@
 # DX_Patrol_PA_monitor
 
-Progetto: monitor per PA (PWR e SWR) per Arduino Nano (ATmega328P)
+Progetto: PA monitor con lettura (PWR e SWR) e temperatura per Arduino Nano (ATmega328P) da utilizzare esclusivamente con il nuovo PA da 20W by IU0PXK.
 
 Contenuti principali:
 - `src/IU0PXK_PA_Monitor.cpp` — sketch principale con lettura ADC, calibrazione polinomiale, formattazione display LCD I2C e output seriale per debug.
