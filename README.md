@@ -11,10 +11,6 @@ Compilazione e upload
 
 Assicurati di avere PlatformIO CLI funzionante (consigliato installazione tramite `pipx`).
 
-```bash
-cd /home/alex/Documents/PlatformIO/Projects/260227-101657-nanoatmega328new
-~/.local/bin/platformio run -e nanoatmega328new -t upload
-```
 
 Calibrazione
 
