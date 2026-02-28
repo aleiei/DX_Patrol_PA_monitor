@@ -24,6 +24,6 @@ Note
 - Il display mostra sempre i valori in formato `NN,NN` (due cifre intere, due decimali) e i valori piccoli vengono azzerati per evitare oscillazioni dovute al rumore ADC.
 - Se occorre, regolare le soglie `raw_pwr < 8` o `pwr_voltage < 0.001f` nel codice.
 
-Licenza
+Licenza 
 
-Inserire eventuale licenza (es. MIT) se necessario.
+MIT.
