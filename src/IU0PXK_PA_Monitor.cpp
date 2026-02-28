@@ -20,8 +20,7 @@ void clearLcdLine(uint8_t row) {
 }
 
 // Evaluate polynomial c[0] + c[1]*x + ... + c[deg]*x^deg
-static float evalPoly(float x, const float *c, int deg) {
-    float y = 0.0f;
+static float evalPoly(float x, const float *c, int deg) {  float y = 0.0f;
     float xi = 1.0f;
     for (int i = 0; i <= deg; ++i) {
         y += c[i] * xi;
