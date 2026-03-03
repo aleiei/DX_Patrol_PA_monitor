@@ -18,3 +18,7 @@ build/
 
 # user-specific
 *.log
+
+# Python virtual environments
+venv/
+.venv/
