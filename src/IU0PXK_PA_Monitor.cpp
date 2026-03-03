@@ -12,6 +12,10 @@ float pwr_voltage = 0.0f;
 
 static const float ADC_MV_PER_STEP = 5000.0f / 1023.0f;
 static const float EPS = 1e-6f;
+static const float TEMP_FILTER_ALPHA = 0.15f;
+
+static float temp_filtered_c = 0.0f;
+static bool temp_filter_initialized = false;
 
 void clearLcdLine(uint8_t row) {
     MyLCD.setCursor(0, row);
@@ -49,7 +53,14 @@ void loop() {
 
     // temperature uses simple linear conversion
     float temp_mV = raw_temp * ADC_MV_PER_STEP;
-    temp_voltage = (temp_mV - 464.0f) / 6.25f;
+    float temp_c = (temp_mV - 464.0f) / 6.25f;
+    if (!temp_filter_initialized) {
+        temp_filtered_c = temp_c;
+        temp_filter_initialized = true;
+    } else {
+        temp_filtered_c += TEMP_FILTER_ALPHA * (temp_c - temp_filtered_c);
+    }
+    temp_voltage = temp_filtered_c;
 
     // polynomial regression coefficients (example values)
     // these should be replaced with values obtained from calibration
@@ -145,7 +156,7 @@ void loop() {
         MyLCD.print(buf);
     }
 
-    delay(300);
+    delay(100);
 
     // Serial debug output for calibration: raw ADC, mV, adjusted, and computed values
     Serial.print("raw_pwr="); Serial.print(raw_pwr);
