@@ -56,8 +56,6 @@ void loop() {
     // NOTE: we evaluate the polynomials on a scaled voltage-like input
     const float pwrCoeffs[] = { 0.0f, 0.0f, 1.0f }; // placeholder: a0 + a1*x + a2*x^2 (x in volts)
     const int   pwrDeg     = sizeof(pwrCoeffs)/sizeof(pwrCoeffs[0]) - 1;
-    const float swrCoeffs[] = { 0.0f, 1.0f, 0.0f };           // placeholder linear model
-    const int   swrDeg     = sizeof(swrCoeffs)/sizeof(swrCoeffs[0]) - 1;
 
     // convert ADC to millivolts and compute adjusted values
     float swr_mV = raw_swr * ADC_MV_PER_STEP;
@@ -67,11 +65,9 @@ void loop() {
 
     // scale inputs to approximately volt-range for polynomial (x in volts)
     float x_pwr = pwr_adj / 1000.0f; // volts (may be negative)
-    float x_swr = swr_adj / 1000.0f;
 
     // evaluate polynomial using scaled inputs
     pwr_voltage = evalPoly(x_pwr, pwrCoeffs, pwrDeg);
-    swr_voltage = evalPoly(x_swr, swrCoeffs, swrDeg);
 
     // fallback: if polynomial gives unrealistic results (too large or negative),
     // use previous empirical formula for power
@@ -85,34 +81,29 @@ void loop() {
         pwr_voltage = 0.0f;
     }
 
-    // remove any constant offset produced by the SWR polynomial at x=0
-    float swr_baseline = evalPoly(0.0f, swrCoeffs, swrDeg);
-    swr_voltage -= swr_baseline;
-
-    // If measured power is very small or ADC reading is near zero,
-    // consider SWR as 0 (no meaningful measurement)
+    // SWR computation from forward/reflected channels
+    // gamma = Vref / Vfwd, SWR = (1 + gamma) / (1 - gamma)
     if (raw_pwr < 8 || pwr_voltage < 0.001f || raw_swr < 4) {
-        swr_voltage = 0.0f;
-    }
+        swr_voltage = 1.0f;
+    } else {
+        float fwd = pwr_adj;
+        float ref = swr_adj;
+        if (fwd < 0.0f) fwd = 0.0f;
+        if (ref < 0.0f) ref = 0.0f;
 
-    // final sanity clamp
-    if (!isfinite(swr_voltage)) swr_voltage = 0.0f;
-
-    // If SWR looks unrealistic, compute alternative estimate using original empirical formula
-    if (swr_voltage > 10.0f || swr_voltage < 0.0f) {
-        float denom = (pwr_adj - swr_adj);
-        float swr_alt = 0.0f;
-        if (fabsf(denom) > EPS) {
-            swr_alt = (pwr_adj + swr_adj) / denom;
-        }
-        if (isfinite(swr_alt) && swr_alt > 0.0f && swr_alt < 10.0f) {
-            swr_voltage = swr_alt;
+        if (fwd <= EPS) {
+            swr_voltage = 1.0f;
         } else {
-            swr_voltage = 0.0f;
+            float gamma = ref / fwd;
+            if (gamma < 0.0f) gamma = 0.0f;
+            if (gamma >= 1.0f) gamma = 0.98f;
+            swr_voltage = (1.0f + gamma) / (1.0f - gamma);
         }
     }
 
-    if (swr_voltage < 0.0f) swr_voltage = 0.0f;
+    if (!isfinite(swr_voltage)) swr_voltage = 1.0f;
+    if (swr_voltage < 1.0f) swr_voltage = 1.0f;
+    if (swr_voltage > 9.99f) swr_voltage = 9.99f;
 
     clearLcdLine(1);
     MyLCD.setCursor(0, 1);
@@ -123,17 +114,17 @@ void loop() {
     MyLCD.setCursor(0, 2);
     MyLCD.print("SWR   = ");
     {
-        // format swr exactly like power so it always shows two digits
+        // SWR shown as one integer digit with two decimals, starting at 1.00
         char buf[8];
         float sv = swr_voltage;
-        if (sv < 0.0f) sv = 0.0f;
-        // cap to 99.99 (allow rounding)
-        if (sv > 99.995f) sv = 99.995f;
+        if (sv < 1.0f) sv = 1.0f;
+        // cap to 9.99 (one integer digit)
+        if (sv > 9.995f) sv = 9.995f;
         int isv = (int)sv;
         int dsv = (int)roundf((sv - isv) * 100.0f);
         if (dsv >= 100) { isv++; dsv = 0; }
-        if (isv > 99) { isv = 99; dsv = 99; }
-        snprintf(buf, sizeof(buf), "%02d,%02d", isv, dsv);
+        if (isv > 9) { isv = 9; dsv = 99; }
+        snprintf(buf, sizeof(buf), "%1d,%02d", isv, dsv);
         MyLCD.print(buf);
     }
 
