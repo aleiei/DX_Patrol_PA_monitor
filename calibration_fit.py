@@ -5,7 +5,7 @@ Usage:
   2. Save them in lists below or load from CSV.
   3. Run the script and it will print polynomial coefficients.
 
-The coefficients can then be copied into IU0PXK_PA_Monitor.cpp arrays.
+The coefficients can then be copied into main.cpp arrays.
 """
 
 import numpy as np
