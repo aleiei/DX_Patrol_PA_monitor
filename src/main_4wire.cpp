@@ -404,10 +404,10 @@ static void drawMenu() {
             // Show value being edited (asterisk = edit mode)
             switch (i) {
                 case MENU_FAN_ON:
-                    snprintf(line, sizeof(line), "%c*Fan ON : %4.1f C  ", cursor, edit_fan_on);
+                    snprintf(line, sizeof(line), "%c*Fan ON : %4.1f C  ", cursor, (double)edit_fan_on);
                     break;
                 case MENU_FAN_OFF:
-                    snprintf(line, sizeof(line), "%c*Fan OFF: %4.1f C  ", cursor, edit_fan_off);
+                    snprintf(line, sizeof(line), "%c*Fan OFF: %4.1f C  ", cursor, (double)edit_fan_off);
                     break;
                 case MENU_FAN_PWM_MIN:
                     snprintf(line, sizeof(line), "%c*PWM min: %3d/255  ", cursor, (int)edit_fan_pwm_min);
@@ -416,10 +416,10 @@ static void drawMenu() {
         } else {
             switch (i) {
                 case MENU_FAN_ON:
-                    snprintf(line, sizeof(line), "%c Fan ON : %4.1f C  ", cursor, cfg_fan_on);
+                    snprintf(line, sizeof(line), "%c Fan ON : %4.1f C  ", cursor, (double)cfg_fan_on);
                     break;
                 case MENU_FAN_OFF:
-                    snprintf(line, sizeof(line), "%c Fan OFF: %4.1f C  ", cursor, cfg_fan_off);
+                    snprintf(line, sizeof(line), "%c Fan OFF: %4.1f C  ", cursor, (double)cfg_fan_off);
                     break;
                 case MENU_FAN_PWM_MIN:
                     snprintf(line, sizeof(line), "%c PWM min: %3d/255  ", cursor, (int)cfg_fan_pwm_min);

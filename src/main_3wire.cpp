@@ -478,10 +478,10 @@ static void drawMenu() {
             // Value being edited
             switch (item) {
                 case MENU_FAN_ON:
-                    snprintf(line, sizeof(line), "%c*Fan ON :%5.1fC    ", cursor, edit_fan_on);
+                    snprintf(line, sizeof(line), "%c*Fan ON :%5.1fC    ", cursor, (double)edit_fan_on);
                     break;
                 case MENU_FAN_OFF:
-                    snprintf(line, sizeof(line), "%c*Fan OFF:%5.1fC    ", cursor, edit_fan_off);
+                    snprintf(line, sizeof(line), "%c*Fan OFF:%5.1fC    ", cursor, (double)edit_fan_off);
                     break;
                 case MENU_DUTY_MIN:
                     snprintf(line, sizeof(line), "%c*Min duty:  %3d%%   ", cursor, (int)edit_duty_min);
@@ -496,10 +496,10 @@ static void drawMenu() {
         } else {
             switch (item) {
                 case MENU_FAN_ON:
-                    snprintf(line, sizeof(line), "%c Fan ON :%5.1fC    ", cursor, cfg_fan_on);
+                    snprintf(line, sizeof(line), "%c Fan ON :%5.1fC    ", cursor, (double)cfg_fan_on);
                     break;
                 case MENU_FAN_OFF:
-                    snprintf(line, sizeof(line), "%c Fan OFF:%5.1fC    ", cursor, cfg_fan_off);
+                    snprintf(line, sizeof(line), "%c Fan OFF:%5.1fC    ", cursor, (double)cfg_fan_off);
                     break;
                 case MENU_DUTY_MIN:
                     snprintf(line, sizeof(line), "%c Min duty:  %3d%%   ", cursor, (int)cfg_fan_duty_min);
