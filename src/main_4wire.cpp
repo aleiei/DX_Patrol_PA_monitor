@@ -45,6 +45,11 @@
 #include <math.h>
 #include <stdio.h>
 
+// AVR toolchains may not define IRAM_ATTR; keep ISR declaration portable.
+#ifndef IRAM_ATTR
+#define IRAM_ATTR
+#endif
+
 // ---------------------------------------------------------------------------
 // Build-time options
 // ---------------------------------------------------------------------------
@@ -176,6 +181,9 @@ static bool     fan_running            = false;
 
 // LCD cache for differential updates
 static char prev_line[4][21];
+
+// Global monitor loop timing state.
+static uint32_t last_update_ms = 0;
 
 // ---------------------------------------------------------------------------
 // Rotary encoder (handled via interrupt)
