@@ -1,33 +1,33 @@
 /**
  * main_4wire.cpp  —  v3.0.0-4wire
- * PA Monitor — PWR, SWR, Temperatura + Controllo Ventola PWM 4 FILI
+ * PA Monitor — PWR, SWR, Temperature + 4-WIRE PWM Fan Control
  * Arduino Nano (ATmega328P) — DX Patrol 20W PA by IU0PXK
  *
- * Novità rispetto a v2.0.0:
- *  - Encoder rotativo (CLK/DT/SW) per navigazione menù
- *  - Menù impostazioni con 3 parametri regolabili (vedere sotto)
- *  - Controllo ventola PWM hardware a ~50 kHz su pin OC1A (D9)
- *  - Salvataggio impostazioni in EEPROM (magic byte 0xA5)
- *  - Controllo proporzionale velocità ventola con isteresi
- *  - Display: schermata monitor (3 righe dati + 1 stato) e schermata menù
- *  - Timeout automatico menù 15 s → ritorno al monitor
+ * New vs v2.0.0:
+ *  - Rotary encoder (CLK/DT/SW) for menu navigation
+ *  - Settings menu with 3 adjustable parameters (see below)
+ *  - Hardware PWM fan control at ~50 kHz on OC1A pin (D9)
+ *  - Settings saved in EEPROM (magic byte 0xA5)
+ *  - Proportional fan speed control with hysteresis
+ *  - Display: monitor screen (3 data rows + 1 status row) and menu screen
+ *  - Automatic 15 s menu timeout -> return to monitor
  *
- *  VENTOLA 4 FILI — Schema di controllo:
+ *  4-WIRE FAN — Control wiring:
  *  ──────────────────────────────────────
- *  Le ventole a 4 fili (GND, +12V, TACH, PWM) hanno un pin PWM dedicato
- *  che accetta un segnale a ~25 kHz direttamente dal microcontrollore.
- *  Non è necessario alcun MOSFET: il pin D9 si collega direttamente al
- *  pin BLU (pin 4) della ventola.
+ *  4-wire fans (GND, +12V, TACH, PWM) have a dedicated PWM pin
+ *  that accepts a ~25 kHz control signal directly from the MCU.
+ *  No MOSFET is required: D9 connects directly to the
+ *  BLUE fan wire (pin 4).
  *
- *       Arduino D9 (OC1A) ─────  Pin 4 BLU  ventola (PWM)
- *       Arduino GND       ─────  Pin 1 NERO  ventola (GND)
- *                                Pin 2 GIALLO (TACH, non usato)
- *       +12V              ─────  Pin 3 ROSSO  ventola (+12V)
+ *       Arduino D9 (OC1A) ─────  Fan pin 4 BLUE  (PWM)
+ *       Arduino GND       ─────  Fan pin 1 BLACK (GND)
+ *                                Fan pin 2 YELLOW (TACH, unused)
+ *       +12V              ─────  Fan pin 3 RED   (+12V)
  *
- *  Frequenza PWM: ~50 kHz (Timer1, Fast PWM, TOP = ICR1 = 319)
- *    f = 16 MHz / (1 * (319+1)) = 50 kHz  → silenzioso, ideale per 4 fili
+ *  PWM frequency: ~50 kHz (Timer1, Fast PWM, TOP = ICR1 = 319)
+ *    f = 16 MHz / (1 * (319+1)) = 50 kHz -> silent operation, ideal for 4-wire fans
  *
- *  Encoder rotativo:
+ *  Rotary encoder:
  *  ─────────────────
  *  CLK → D2 (INT0), DT → D3 (INT1), SW → D4
  *
@@ -48,7 +48,7 @@
 // ---------------------------------------------------------------------------
 // Build-time options
 // ---------------------------------------------------------------------------
-// #define DEBUG   // decommentare per output seriale
+// #define DEBUG   // uncomment for serial output
 
 // ---------------------------------------------------------------------------
 // Pin mapping
@@ -59,7 +59,7 @@ static constexpr uint8_t PIN_PWR        = A2;
 
 static constexpr uint8_t PIN_ENC_CLK    = 2;   // interrupt INT0
 static constexpr uint8_t PIN_ENC_DT     = 3;   // interrupt INT1
-static constexpr uint8_t PIN_ENC_SW     = 4;   // pulsante encoder
+static constexpr uint8_t PIN_ENC_SW     = 4;   // encoder button
 
 static constexpr uint8_t PIN_FAN_PWM    = 9;   // OC1A — Timer1 ~25 kHz
 
@@ -72,20 +72,20 @@ static constexpr float    ADC_MV_PER_STEP   = VREF_MV / ADC_MAX;
 static constexpr uint8_t  ADC_SAMPLES       = 16;
 
 // ---------------------------------------------------------------------------
-// Temperatura
+// Temperature
 // ---------------------------------------------------------------------------
 static constexpr float TEMP_OFFSET_MV      = 464.0f;
 static constexpr float TEMP_MV_PER_DEG     = 6.25f;
 static constexpr float TEMP_FILTER_ALPHA   = 0.15f;
 
 // ---------------------------------------------------------------------------
-// Offsets ADC canali RF
+// ADC offsets for RF channels
 // ---------------------------------------------------------------------------
 static constexpr float PWR_ADC_OFFSET_MV   = 298.0f;
 static constexpr float SWR_ADC_OFFSET_MV   = 1288.0f;
 
 // ---------------------------------------------------------------------------
-// Soglie rumore ADC
+// ADC noise thresholds
 // ---------------------------------------------------------------------------
 static constexpr uint16_t RAW_PWR_NOISE_FLOOR = 8;
 static constexpr uint16_t RAW_SWR_NOISE_FLOOR = 4;
@@ -93,19 +93,19 @@ static constexpr float    PWR_MIN_WATTS        = 0.001f;
 static constexpr float    EPS                  = 1e-6f;
 
 // ---------------------------------------------------------------------------
-// Limiti display
+// Display limits
 // ---------------------------------------------------------------------------
 static constexpr float PWR_MAX_DISPLAY  = 99.995f;
 static constexpr float SWR_MAX_DISPLAY  = 9.995f;
 
 // ---------------------------------------------------------------------------
-// Timing loop
+// Loop timing
 // ---------------------------------------------------------------------------
 static constexpr uint32_t LOOP_INTERVAL_MS  = 100;
-static constexpr uint32_t MENU_TIMEOUT_MS   = 15000;  // ritorno auto al monitor dopo 15 s
+static constexpr uint32_t MENU_TIMEOUT_MS   = 15000;  // auto return to monitor after 15 s
 
 // ---------------------------------------------------------------------------
-// Polinomi calibrazione PWR (sostituire con valori reali da calibration_fit.py)
+// PWR calibration polynomials (replace with real values from calibration_fit.py)
 // ---------------------------------------------------------------------------
 static constexpr float PWR_COEFFS[] = { 0.0f, 0.0f, 1.0f };
 static constexpr int   PWR_DEG      = (sizeof(PWR_COEFFS) / sizeof(PWR_COEFFS[0])) - 1;
@@ -113,21 +113,21 @@ static constexpr int   PWR_DEG      = (sizeof(PWR_COEFFS) / sizeof(PWR_COEFFS[0]
 // ---------------------------------------------------------------------------
 // EEPROM layout
 // ---------------------------------------------------------------------------
-// Indirizzi EEPROM (ogni float = 4 byte)
+// EEPROM addresses (each float = 4 bytes)
 static constexpr int EE_ADDR_MAGIC       = 0;          // 1 byte magic number
-static constexpr int EE_ADDR_FAN_ON      = 1;          // float  soglia ON  (°C)
-static constexpr int EE_ADDR_FAN_OFF     = 5;          // float  soglia OFF (°C)
-static constexpr int EE_ADDR_FAN_PWM_MIN = 9;          // uint8  PWM minimo (0-255)
+static constexpr int EE_ADDR_FAN_ON      = 1;          // float  ON threshold  (°C)
+static constexpr int EE_ADDR_FAN_OFF     = 5;          // float  OFF threshold (°C)
+static constexpr int EE_ADDR_FAN_PWM_MIN = 9;          // uint8  min PWM (0-255)
 static constexpr uint8_t EE_MAGIC_VALUE  = 0xA5;
 
-// Valori default impostazioni
+// Default settings values
 static constexpr float   DEFAULT_FAN_ON      = 45.0f;  // °C
 static constexpr float   DEFAULT_FAN_OFF     = 40.0f;  // °C
-static constexpr uint8_t DEFAULT_FAN_PWM_MIN = 80;     // ~31% duty (ventola si muove)
+static constexpr uint8_t DEFAULT_FAN_PWM_MIN = 80;     // ~31% duty (fan spins)
 
 // ---------------------------------------------------------------------------
-// Ventola PWM — Timer1 Fast PWM, prescaler 1 → ~25 kHz (silenzioso)
-// ICR1 = 319 → f = 16MHz / (1 * (319+1)) = 50 kHz; TOP=319 → OCR1A scala 0-319
+// Fan PWM — Timer1 Fast PWM, prescaler 1 -> ~25 kHz (silent)
+// ICR1 = 319 -> f = 16MHz / (1 * (319+1)) = 50 kHz; TOP=319 -> OCR1A scales 0-319
 // ---------------------------------------------------------------------------
 static constexpr uint16_t FAN_PWM_TOP = 319;           // TOP Timer1
 
@@ -137,7 +137,7 @@ static constexpr uint16_t FAN_PWM_TOP = 319;           // TOP Timer1
 static LiquidCrystal_I2C MyLCD(0x27, 20, 4);
 
 // ---------------------------------------------------------------------------
-// Stato applicazione
+// Application state
 // ---------------------------------------------------------------------------
 enum AppState { STATE_MONITOR, STATE_MENU };
 enum MenuItem {
@@ -156,44 +156,44 @@ static const char* const MENU_LABELS[MENU_COUNT] = {
 
 static AppState appState        = STATE_MONITOR;
 static uint8_t  menuIndex       = 0;
-static bool     menuEditing     = false;    // true: stiamo modificando il valore
+static bool     menuEditing     = false;    // true: we are editing the value
 static uint32_t menuLastActivity= 0;
 
-// Impostazioni (in RAM, sincronizzate con EEPROM al salvataggio)
+// Settings (in RAM, synced to EEPROM on save)
 static float    cfg_fan_on      = DEFAULT_FAN_ON;
 static float    cfg_fan_off     = DEFAULT_FAN_OFF;
 static uint8_t  cfg_fan_pwm_min = DEFAULT_FAN_PWM_MIN;
 
-// Valori temporanei durante editing
+// Temporary values while editing
 static float    edit_fan_on;
 static float    edit_fan_off;
 static int16_t  edit_fan_pwm_min;
 
-// Stato sensori
+// Sensor state
 static float    temp_filtered_c        = 0.0f;
 static bool     temp_filter_initialized = false;
 static bool     fan_running            = false;
 
-// Cache LCD per aggiornamento differenziale
+// LCD cache for differential updates
 static char prev_line[4][21];
 
 // ---------------------------------------------------------------------------
-// Encoder rotativo (gestito via interrupt)
+// Rotary encoder (handled via interrupt)
 // ---------------------------------------------------------------------------
-volatile int8_t enc_delta = 0;       // accumulatore giri encoder
+volatile int8_t enc_delta = 0;       // encoder step accumulator
 static uint8_t  enc_last_clk = HIGH;
 
-// Debounce pulsante encoder
+// Debounce encoder button
 static uint32_t btn_last_press_ms = 0;
 static constexpr uint32_t BTN_DEBOUNCE_MS = 50;
 
-// ISR encoder — lettura CLK/DT
+// ISR encoder — CLK/DT reading
 void IRAM_ATTR encoderISR() {
     uint8_t clk_now = digitalRead(PIN_ENC_CLK);
     if (clk_now != enc_last_clk) {
         enc_last_clk = clk_now;
         if (clk_now == LOW) {
-            // fronte di discesa CLK → leggi DT
+            // CLK falling edge -> read DT
             if (digitalRead(PIN_ENC_DT) == HIGH) {
                 enc_delta++;
             } else {
@@ -216,7 +216,7 @@ static bool buttonPressed() {
         uint32_t now = millis();
         if (now - btn_last_press_ms > BTN_DEBOUNCE_MS) {
             btn_last_press_ms = now;
-            // aspetta rilascio
+            // wait for release
             while (digitalRead(PIN_ENC_SW) == LOW) delay(5);
             return true;
         }
@@ -231,7 +231,7 @@ static void eepromLoadSettings() {
     uint8_t magic;
     EEPROM.get(EE_ADDR_MAGIC, magic);
     if (magic != EE_MAGIC_VALUE) {
-        // Prima accensione: usa default
+        // First boot: use defaults
         cfg_fan_on      = DEFAULT_FAN_ON;
         cfg_fan_off     = DEFAULT_FAN_OFF;
         cfg_fan_pwm_min = DEFAULT_FAN_PWM_MIN;
@@ -255,29 +255,29 @@ static void eepromSaveSettings() {
 }
 
 // ---------------------------------------------------------------------------
-// Fan PWM — Timer1 Fast PWM non-invertente su OC1A (D9)
+// Fan PWM — Timer1 Fast PWM non-inverting on OC1A (D9)
 // ---------------------------------------------------------------------------
 static void fanPwmSetup() {
-    // Fast PWM, TOP = ICR1, non-invertente su OC1A
+    // Fast PWM, TOP = ICR1, non-inverting su OC1A
     // WGM13:10 = 1110 → Fast PWM, TOP = ICR1
     // COM1A1:0 = 10   → Clear OC1A on compare match
     // CS10 = 1        → prescaler 1 → f = 16 MHz / (TOP+1) ≈ 50 kHz
     TCCR1A = (1 << COM1A1) | (1 << WGM11);
     TCCR1B = (1 << WGM13)  | (1 << WGM12) | (1 << CS10);
     ICR1   = FAN_PWM_TOP;
-    OCR1A  = 0;    // ventola ferma all'avvio
+    OCR1A  = 0;    // fan stopped at startup
     pinMode(PIN_FAN_PWM, OUTPUT);
 }
 
 /**
- * Imposta la velocità della ventola.
- * @param duty_255: 0 = spenta, 255 = massima velocità
+ * Set fan speed.
+ * @param duty_255: 0 = off, 255 = max speed
  */
 static void fanSetDuty(uint8_t duty_255) {
     if (duty_255 == 0) {
         OCR1A = 0;
     } else {
-        // Rimappa 0-255 → cfg_fan_pwm_min..FAN_PWM_TOP
+        // Remap 0-255 → cfg_fan_pwm_min..FAN_PWM_TOP
         uint16_t ocr = (uint16_t)cfg_fan_pwm_min
                      + (uint16_t)((FAN_PWM_TOP - cfg_fan_pwm_min) * (uint32_t)duty_255 / 255UL);
         OCR1A = ocr;
@@ -285,7 +285,7 @@ static void fanSetDuty(uint8_t duty_255) {
 }
 
 // ---------------------------------------------------------------------------
-// Logica controllo ventola con isteresi
+// Fan control logic with hysteresis
 // ---------------------------------------------------------------------------
 static void updateFan(float temp_c) {
     if (!fan_running && temp_c >= cfg_fan_on) {
@@ -297,12 +297,12 @@ static void updateFan(float temp_c) {
     if (!fan_running) {
         fanSetDuty(0);
     } else {
-        // Modulazione proporzionale tra soglia OFF e soglia ON + 5 °C
+        // Proportional modulation between OFF threshold and ON threshold + 5 °C
         float range = (cfg_fan_on + 5.0f) - cfg_fan_off;
         float t_norm = (temp_c - cfg_fan_off) / max(range, 1.0f);
         t_norm = constrain(t_norm, 0.0f, 1.0f);
         uint8_t duty = (uint8_t)(t_norm * 255.0f);
-        // Garantisci almeno il PWM minimo quando la ventola è accesa
+        // Ensure at least min PWM while the fan is running
         if (duty < cfg_fan_pwm_min) duty = cfg_fan_pwm_min;
         fanSetDuty(duty);
     }
@@ -341,24 +341,24 @@ static void lcdClearCache() {
 }
 
 // ---------------------------------------------------------------------------
-// Schermata monitor
+// Monitor screen
 // ---------------------------------------------------------------------------
 static void drawMonitor(float temp_c, float pwr_w, float swr_v) {
     char line[21];
     char val[9];
 
-    // Riga 0: titolo
+    // Row 0: title
     lcdWriteLine(0, "PA Monitor IU0PXK   ");
 
-    // Riga 1: temperatura + stato ventola
+    // Row 1: temperature + fan status
     dtostrf(temp_c, 5, 1, val);
     snprintf(line, sizeof(line), "TEMP:%s%cC Fan:%s",
              val,
-             (char)223,   // simbolo grado se LCD lo supporta
+             (char)223,   // degree symbol if LCD supports it
              fan_running ? "ON " : "OFF");
     lcdWriteLine(1, line);
 
-    // Riga 2: SWR
+    // Row 2: SWR
     {
         float sv = constrain(swr_v, 1.0f, SWR_MAX_DISPLAY);
         int isv = (int)sv;
@@ -368,7 +368,7 @@ static void drawMonitor(float temp_c, float pwr_w, float swr_v) {
     }
     lcdWriteLine(2, line);
 
-    // Riga 3: PWR
+    // Row 3: PWR
     {
         float pv = constrain(pwr_w, 0.0f, PWR_MAX_DISPLAY);
         int ip = (int)pv;
@@ -380,7 +380,7 @@ static void drawMonitor(float temp_c, float pwr_w, float swr_v) {
 }
 
 // ---------------------------------------------------------------------------
-// Schermata menù
+// Menu screen
 // ---------------------------------------------------------------------------
 static void drawMenu() {
     char line[21];
@@ -421,8 +421,8 @@ static void drawMenu() {
         lcdWriteLine(row, line);
     }
 
-    // Riga EXIT (scorre se menuIndex == MENU_EXIT)
-    // Usiamo la quarta riga per EXIT sempre visibile
+    // EXIT row (selected when menuIndex == MENU_EXIT)
+    // Use the fourth row to keep EXIT always visible
     {
         char cursor = (menuIndex == MENU_EXIT) ? '>' : ' ';
         snprintf(line, sizeof(line), "%c   [ Save & Exit ]  ", cursor);
@@ -431,7 +431,7 @@ static void drawMenu() {
 }
 
 // ---------------------------------------------------------------------------
-// Gestione input menù
+// Menu input handling
 // ---------------------------------------------------------------------------
 static void handleMenuInput() {
     int8_t delta = encoderRead();
@@ -440,7 +440,7 @@ static void handleMenuInput() {
     if (delta != 0 || btn) menuLastActivity = millis();
 
     if (!menuEditing) {
-        // Navigazione voci
+        // Item navigation
         if (delta > 0) {
             menuIndex = (menuIndex + 1) % MENU_COUNT;
             lcdClearCache();
@@ -456,7 +456,7 @@ static void handleMenuInput() {
                 appState = STATE_MONITOR;
                 lcdClearCache();
             } else {
-                // Inizia editing del parametro selezionato
+                // Start editing selected parameter
                 menuEditing = true;
                 edit_fan_on      = cfg_fan_on;
                 edit_fan_off     = cfg_fan_off;
@@ -465,7 +465,7 @@ static void handleMenuInput() {
             }
         }
     } else {
-        // Modifica valore
+        // Edit value
         if (delta != 0) {
             switch (menuIndex) {
                 case MENU_FAN_ON:
@@ -485,7 +485,7 @@ static void handleMenuInput() {
         }
 
         if (btn) {
-            // Conferma valore
+            // Confirm value
             cfg_fan_on      = edit_fan_on;
             cfg_fan_off     = edit_fan_off;
             cfg_fan_pwm_min = (uint8_t)edit_fan_pwm_min;
@@ -494,7 +494,7 @@ static void handleMenuInput() {
         }
     }
 
-    // Timeout automatico: ritorna al monitor senza salvare
+    // Automatic timeout: return to monitor without saving
     if (millis() - menuLastActivity > MENU_TIMEOUT_MS) {
         appState    = STATE_MONITOR;
         menuEditing = false;
@@ -506,16 +506,16 @@ static void handleMenuInput() {
 // setup / loop
 // ---------------------------------------------------------------------------
 void setup() {
-    // Pin encoder
+    // Encoder pins
     pinMode(PIN_ENC_CLK, INPUT_PULLUP);
     pinMode(PIN_ENC_DT,  INPUT_PULLUP);
     pinMode(PIN_ENC_SW,  INPUT_PULLUP);
     enc_last_clk = digitalRead(PIN_ENC_CLK);
 
-    // Interrupt encoder su fronte di cambio CLK e DT
+    // Encoder interrupt on CLK and DT edge changes
     attachInterrupt(digitalPinToInterrupt(PIN_ENC_CLK), encoderISR, CHANGE);
 
-    // Ventola PWM
+    // Fan PWM
     fanPwmSetup();
 
     // LCD
@@ -529,11 +529,11 @@ void setup() {
     MyLCD.setCursor(0, 1);
     MyLCD.print("by IU0PXK           ");
     MyLCD.setCursor(0, 2);
-    MyLCD.print("Press enc. = menu   ");
+    MyLCD.print("Press ENC for menu  ");
     delay(2000);
     lcdClearCache();
 
-    // Carica impostazioni da EEPROM
+    // Load settings from EEPROM
     eepromLoadSettings();
 
 #ifdef DEBUG
@@ -549,7 +549,7 @@ void loop() {
     uint32_t now = millis();
 
     // ------------------------------------------------------------------
-    // Controlla pulsante encoder per entrare nel menù (da schermata monitor)
+    // Check encoder button to enter menu (from monitor screen)
     // ------------------------------------------------------------------
     if (appState == STATE_MONITOR && buttonPressed()) {
         appState          = STATE_MENU;
@@ -560,26 +560,26 @@ void loop() {
     }
 
     // ------------------------------------------------------------------
-    // Gestione menù (non bloccante, gira ad ogni iterazione)
+    // Menu handling (non-blocking, runs every iteration)
     // ------------------------------------------------------------------
     if (appState == STATE_MENU) {
         handleMenuInput();
         drawMenu();
-        return;   // non legge sensori mentre è nel menù
+        return;   // does not read sensors while in menu
     }
 
     // ------------------------------------------------------------------
-    // Loop monitor — cadenza LOOP_INTERVAL_MS
+    // Monitor loop — LOOP_INTERVAL_MS cadence
     // ------------------------------------------------------------------
     if (now - last_update_ms < LOOP_INTERVAL_MS) return;
     last_update_ms = now;
 
-    // 1. Lettura ADC
+    // 1. ADC read
     float raw_temp = adcAverage(PIN_TEMP, ADC_SAMPLES);
     float raw_swr  = adcAverage(PIN_SWR,  ADC_SAMPLES);
     float raw_pwr  = adcAverage(PIN_PWR,  ADC_SAMPLES);
 
-    // 2. Temperatura con EMA
+    // 2. Temperature con EMA
     float temp_mV = raw_temp * ADC_MV_PER_STEP;
     float temp_c  = (temp_mV - TEMP_OFFSET_MV) / TEMP_MV_PER_DEG;
 
@@ -624,10 +624,10 @@ void loop() {
     if (!isfinite(swr_val) || swr_val < 1.0f) swr_val = 1.0f;
     if (swr_val > SWR_MAX_DISPLAY + 0.005f) swr_val = SWR_MAX_DISPLAY;
 
-    // 5. Controllo ventola
+    // 5. Fan control
     updateFan(temp_filtered_c);
 
-    // 6. Aggiornamento display
+    // 6. Display update
     drawMonitor(temp_filtered_c, pwr_watts, swr_val);
 
 #ifdef DEBUG
